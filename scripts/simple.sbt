@@ -1,4 +1,4 @@
-name := "Simple Project"
+name := "Word Count"
 
 version := "1.0"
 

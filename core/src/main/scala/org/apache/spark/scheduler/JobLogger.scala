@@ -55,6 +55,7 @@ class JobLogger(val user: String, val logDirName: String)
   private val jobIDToStages = new HashMap[Int, ListBuffer[Stage]]
   private val DATE_FORMAT = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss")
   private val eventQueue = new LinkedBlockingQueue[SparkListenerEvents]
+  //private val taskTypeToCompletionTime = new HashMap[String,List[Double]].withDefaultValue(Nil)
 
   createLogDir()
 
@@ -266,6 +267,7 @@ class JobLogger(val user: String, val logDirName: String)
                " START_TIME=" + taskInfo.launchTime + " FINISH_TIME=" + taskInfo.finishTime +
                " EXECUTOR_ID=" + taskInfo.executorId +  " HOST=" + taskMetrics.hostname
     val executorRunTime = " EXECUTOR_RUN_TIME=" + taskMetrics.executorRunTime
+    //taskTypeToCompletionTime[status.split()(0)] ::= executorRunTime.toDouble/1000
     val readMetrics = taskMetrics.shuffleReadMetrics match {
       case Some(metrics) =>
         " SHUFFLE_FINISH_TIME=" + metrics.shuffleFinishTime +

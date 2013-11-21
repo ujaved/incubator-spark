@@ -234,7 +234,11 @@ abstract class RDD[T: ClassManifest](
     if (isCheckpointed) {
       firstParent[T].iterator(split, context)
     } else {
-      compute(split, context)
+      val computeStart = System.currentTimeMillis()
+      val r = compute(split, context)
+      val computeTime = System.currentTimeMillis() - computeStart
+      logDebug("RDD: " + id + " " + name + ": partition: " + split.index + " computeTime: " + computeTime)
+      r
     }
   }
 
