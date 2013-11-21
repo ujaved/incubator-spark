@@ -237,10 +237,23 @@ abstract class RDD[T: ClassManifest](
       val computeStart = System.currentTimeMillis()
       val r = compute(split, context)
       val computeTime = System.currentTimeMillis() - computeStart
+      try{
+        throwsException();
+      } catch {
+	case e: Exception => {
+	  logInfo("exception caught: " + e)
+	  logInfo("stack trace: " + e.printStackTrace)
+	}
+      }
       logDebug("RDD: " + id + " " + name + ": partition: " + split.index + " computeTime: " + computeTime)
       r
     }
   }
+
+  def throwsException() {
+        throw new IllegalStateException("Exception thrown");
+  }
+	    
 
   // Transformations (return a new RDD)
 
