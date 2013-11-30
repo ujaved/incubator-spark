@@ -160,6 +160,7 @@ private[spark] class ClusterTaskSetManager(
     }
 
     var hadAliveLocations = false
+    logDebug("partition: " + index + " preferredLocations size: " + tasks(index).preferredLocations)
     for (loc <- tasks(index).preferredLocations) {
       for (execId <- loc.executorId) {
         if (sched.isExecutorAlive(execId)) {
@@ -696,6 +697,10 @@ private[spark] class ClusterTaskSetManager(
   private def computeValidLocalityLevels(): Array[TaskLocality.TaskLocality] = {
     import TaskLocality.{PROCESS_LOCAL, NODE_LOCAL, RACK_LOCAL, ANY}
     val levels = new ArrayBuffer[TaskLocality.TaskLocality]
+    logDebug("process loc: " + getLocalityWait(PROCESS_LOCAL))
+    logDebug("node loc: " + getLocalityWait(NODE_LOCAL))
+    logDebug("rack loc: " + getLocalityWait(RACK_LOCAL))
+    logDebug("pending empty: " + pendingTasksForExecutor.isEmpty)
     if (!pendingTasksForExecutor.isEmpty && getLocalityWait(PROCESS_LOCAL) != 0) {
       levels += PROCESS_LOCAL
     }

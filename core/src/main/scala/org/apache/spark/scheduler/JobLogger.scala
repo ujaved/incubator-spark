@@ -55,7 +55,7 @@ class JobLogger(val user: String, val logDirName: String)
   private val jobIDToStages = new HashMap[Int, ListBuffer[Stage]]
   private val DATE_FORMAT = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss")
   private val eventQueue = new LinkedBlockingQueue[SparkListenerEvents]
-  //private val taskTypeToCompletionTime = new HashMap[String,List[Double]].withDefaultValue(Nil)
+  private val taskTypeToCompletionTime = new HashMap[String,List[Double]].withDefaultValue(Nil)
 
   createLogDir()
 
@@ -267,7 +267,8 @@ class JobLogger(val user: String, val logDirName: String)
                " START_TIME=" + taskInfo.launchTime + " FINISH_TIME=" + taskInfo.finishTime +
                " EXECUTOR_ID=" + taskInfo.executorId +  " HOST=" + taskMetrics.hostname
     val executorRunTime = " EXECUTOR_RUN_TIME=" + taskMetrics.executorRunTime
-    //taskTypeToCompletionTime[status.split()(0)] ::= executorRunTime.toDouble/1000
+    val taskType = status.split(" ")(0)  
+    //taskTypeToCompletionTime(taskType) ::= executorRunTime.toDouble/1000
     val readMetrics = taskMetrics.shuffleReadMetrics match {
       case Some(metrics) =>
         " SHUFFLE_FINISH_TIME=" + metrics.shuffleFinishTime +
@@ -320,6 +321,7 @@ class JobLogger(val user: String, val logDirName: String)
     }
     taskEnd.reason match {
       case Success => taskStatus += " STATUS=SUCCESS"
+        logInfo("umarrrrrrrrrr")
         recordTaskMetrics(task.stageId, taskStatus, taskInfo, taskEnd.taskMetrics)
       case Resubmitted =>
         taskStatus += " STATUS=RESUBMITTED TID=" + taskInfo.taskId +
@@ -353,6 +355,18 @@ class JobLogger(val user: String, val logDirName: String)
       case _ =>
     }
     jobLogInfo(job.jobId, info.substring(0, info.length - 1).toUpperCase)
+    
+    //write aggregate statitsics
+    /*
+    for ((k,v) <- taskTypeToCompletionTime) {
+      val min = v.toIterator.min
+      val max = v.toIterator.max
+      val w = v.sorted
+      val median = w(w.size/2)
+      var s = "Aggregate statistics for task type: " + k + ": \n"
+      s += "min duration: " + min + " max duration: " + max + " median: " + median
+      jobIDToPrintWriter.get(job.jobId).foreach(_.println(s))
+    }*/
     closeLogWriter(job.jobId)
   }
 
