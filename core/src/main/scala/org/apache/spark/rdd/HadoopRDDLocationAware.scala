@@ -37,7 +37,7 @@ import org.apache.hadoop.conf.{Configuration, Configurable}
 /**
  * A Spark split class that wraps around a Hadoop InputSplit.
  */
-private[spark] class HadoopPartition(rddId: Int, idx: Int, @transient s: InputSplit)
+private[spark] class HadoopPartitionLocationAware(rddId: Int, idx: Int, @transient s: InputSplit)
   extends Partition {
 
   val inputSplit = new SerializableWritable[InputSplit](s)
@@ -60,9 +60,9 @@ private[spark] class HadoopPartition(rddId: Int, idx: Int, @transient s: InputSp
  * @param inputFormatClass Storage format of the data to be read.
  * @param keyClass Class of the key associated with the inputFormatClass.
  * @param valueClass Class of the value associated with the inputFormatClass.
- * @param minSplits Minimum number of Hadoop Splits (HadoopRDD partitions) to generate.
+ * @param minSplits Minimum number of Hadoop Splits (HadoopRDDLocationAware partitions) to generate.
  */
-class HadoopRDD[K, V](
+class HadoopRDDLocationAwareLocationAware[K, V](
     sc: SparkContext,
     broadcastedConf: Broadcast[SerializableWritable[Configuration]],
     initLocalJobConfFuncOpt: Option[JobConf => Unit],
@@ -98,26 +98,26 @@ class HadoopRDD[K, V](
   protected def getJobConf(): JobConf = {
     val conf: Configuration = broadcastedConf.value.value
     if (conf.isInstanceOf[JobConf]) {
-      // A user-broadcasted JobConf was provided to the HadoopRDD, so always use it.
+      // A user-broadcasted JobConf was provided to the HadoopRDDLocationAware, so always use it.
       return conf.asInstanceOf[JobConf]
-    } else if (HadoopRDD.containsCachedMetadata(jobConfCacheKey)) {
+    } else if (HadoopRDDLocationAware.containsCachedMetadata(jobConfCacheKey)) {
       // getJobConf() has been called previously, so there is already a local cache of the JobConf
       // needed by this RDD.
-      return HadoopRDD.getCachedMetadata(jobConfCacheKey).asInstanceOf[JobConf]
+      return HadoopRDDLocationAware.getCachedMetadata(jobConfCacheKey).asInstanceOf[JobConf]
     } else {
       // Create a JobConf that will be cached and used across this RDD's getJobConf() calls in the
-      // local process. The local cache is accessed through HadoopRDD.putCachedMetadata().
+      // local process. The local cache is accessed through HadoopRDDLocationAware.putCachedMetadata().
       // The caching helps minimize GC, since a JobConf can contain ~10KB of temporary objects.
       val newJobConf = new JobConf(broadcastedConf.value.value)
       initLocalJobConfFuncOpt.map(f => f(newJobConf))
-      HadoopRDD.putCachedMetadata(jobConfCacheKey, newJobConf)
+      HadoopRDDLocationAware.putCachedMetadata(jobConfCacheKey, newJobConf)
       return newJobConf
     }
   }
 
   protected def getInputFormat(conf: JobConf): InputFormat[K, V] = {
-    if (HadoopRDD.containsCachedMetadata(inputFormatCacheKey)) {
-      return HadoopRDD.getCachedMetadata(inputFormatCacheKey).asInstanceOf[InputFormat[K, V]]
+    if (HadoopRDDLocationAware.containsCachedMetadata(inputFormatCacheKey)) {
+      return HadoopRDDLocationAware.getCachedMetadata(inputFormatCacheKey).asInstanceOf[InputFormat[K, V]]
     }
     // Once an InputFormat for this RDD is created, cache it so that only one reflection call is
     // done in each local process.
@@ -126,7 +126,7 @@ class HadoopRDD[K, V](
     if (newInputFormat.isInstanceOf[Configurable]) {
       newInputFormat.asInstanceOf[Configurable].setConf(conf)
     }
-    HadoopRDD.putCachedMetadata(inputFormatCacheKey, newInputFormat)
+    HadoopRDDLocationAware.putCachedMetadata(inputFormatCacheKey, newInputFormat)
     return newInputFormat
   }
 
@@ -141,14 +141,14 @@ class HadoopRDD[K, V](
     val inputSplits = inputFormat.getSplits(jobConf, minSplits)
     val array = new Array[Partition](inputSplits.size)
     for (i <- 0 until inputSplits.size) {
-      array(i) = new HadoopPartition(id, i, inputSplits(i))
+      array(i) = new HadoopPartitionLocationAware(id, i, inputSplits(i))
     }
     array
   }
 
   override def compute(theSplit: Partition, context: TaskContext) = {
     val iter = new NextIterator[(K, V)] {
-      val split = theSplit.asInstanceOf[HadoopPartition]
+      val split = theSplit.asInstanceOf[HadoopPartitionLocationAware]
       logInfo("Input split: " + split.inputSplit)
       var reader: RecordReader[K, V] = null
 
@@ -185,10 +185,10 @@ class HadoopRDD[K, V](
 
   override def getPreferredLocations(split: Partition): Seq[String] = {
     // TODO: Filtering out "localhost" in case of file:// URLs
-    val hadoopSplit = split.asInstanceOf[HadoopPartition]
+    val hadoopSplit = split.asInstanceOf[HadoopPartitionLocationAware]
+    logDebug("Hadoop locations: " + hadoopSplit.inputSplit.value.getLocations.mkString(" "))
     hadoopSplit.inputSplit.value.getLocations.filter(_ != "localhost")
   }
-  
 
   override def checkpoint() {
     // Do nothing. Hadoop RDD should not be checkpointed.
@@ -197,7 +197,7 @@ class HadoopRDD[K, V](
   def getConf: Configuration = getJobConf()
 }
 
-private[spark] object HadoopRDD {
+private[spark] object HadoopRDDLocationAware {
   /**
    * The three methods below are helpers for accessing the local map, a property of the SparkEnv of
    * the local process.

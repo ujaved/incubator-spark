@@ -179,9 +179,22 @@ class DAGScheduler(
   }
 
   private def getCacheLocs(rdd: RDD[_]): Array[Seq[TaskLocation]] = {
+    /*
+    try{
+      throwsException();
+    } catch {
+      case e: Exception => {
+	logInfo("exception caught: " + e)
+	logInfo("stack trace: " + e.printStackTrace)
+      }
+    }
+    */
     if (!cacheLocs.contains(rdd.id)) {
       val blockIds = rdd.partitions.indices.map(index=> RDDBlockId(rdd.id, index)).toArray[BlockId]
       val locs = BlockManager.blockIdsToBlockManagers(blockIds, env, blockManagerMaster)
+      val A = blockIds.map { id =>
+        locs.getOrElse(id, Nil).map(bm => (bm.host, bm.executorId))
+      }
       cacheLocs(rdd.id) = blockIds.map { id =>
         locs.getOrElse(id, Nil).map(bm => TaskLocation(bm.host, bm.executorId))
       }
@@ -191,6 +204,10 @@ class DAGScheduler(
 
   private def clearCacheLocs() {
     cacheLocs.clear()
+  }
+
+  def throwsException() {
+    throw new IllegalStateException("Exception thrown");
   }
 
   /**
@@ -846,9 +863,11 @@ class DAGScheduler(
     if (!cached.isEmpty) {
       return cached
     }
+      
     // If the RDD has some placement preferences (as is the case for input RDDs), get those
     val rddPrefs = rdd.preferredLocations(rdd.partitions(partition)).toList
     if (!rddPrefs.isEmpty) {
+      logDebug("rdd preferred locs: " + rddPrefs.mkString(" "))
       return rddPrefs.map(host => TaskLocation(host))
     }
     // If the RDD has narrow dependencies, pick the first partition of the first narrow dep

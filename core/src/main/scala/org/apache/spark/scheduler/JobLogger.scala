@@ -321,7 +321,6 @@ class JobLogger(val user: String, val logDirName: String)
     }
     taskEnd.reason match {
       case Success => taskStatus += " STATUS=SUCCESS"
-        logInfo("umarrrrrrrrrr")
         recordTaskMetrics(task.stageId, taskStatus, taskInfo, taskEnd.taskMetrics)
       case Resubmitted =>
         taskStatus += " STATUS=RESUBMITTED TID=" + taskInfo.taskId +

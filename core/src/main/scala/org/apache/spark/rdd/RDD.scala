@@ -116,11 +116,20 @@ abstract class RDD[T: ClassManifest](
   /** A friendly name for this RDD */
   var name: String = null
 
+  var overlayPreferredLocations: List[String] = null
+  var overlayLocationsSet = false
+  def setOverlayPreferredLocations(locs: List[String]) = {
+    overlayPreferredLocations = locs
+    overlayLocationsSet = true
+    this
+  }
+
   /** Assign a name to this RDD */
   def setName(_name: String) = {
     name = _name
     this
   }
+
 
   /** User-defined generator of this RDD*/
   var generator = Utils.getCallSiteInfo.firstUserClass
@@ -210,7 +219,11 @@ abstract class RDD[T: ClassManifest](
    */
   final def preferredLocations(split: Partition): Seq[String] = {
     checkpointRDD.map(_.getPreferredLocations(split)).getOrElse {
-      getPreferredLocations(split)
+      if (!overlayLocationsSet) {
+	getPreferredLocations(split)
+      } else {
+	overlayPreferredLocations
+      }
     }
   }
 
