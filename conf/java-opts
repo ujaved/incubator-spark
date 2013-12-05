@@ -1,0 +1,4 @@
+-Dspark.locality.wait.node=100000
+-Dspark.executor.memory=1g
+-Dspark.unchoke.attempts.max=2
+-Dspark.unchoke.prob=0.1
