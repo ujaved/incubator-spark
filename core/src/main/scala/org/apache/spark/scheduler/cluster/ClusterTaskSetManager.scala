@@ -140,6 +140,8 @@ private[spark] class ClusterTaskSetManager(
   // Figure out which locality levels we have in our TaskSet, so we can do delay scheduling
   val myLocalityLevels = computeValidLocalityLevels()
   val localityWaits = myLocalityLevels.map(getLocalityWait) // Time to wait at each level
+  logDebug("myLocalityLevels: " + myLocalityLevels.mkString(" "))
+  logDebug("localityWaits: " + localityWaits.mkString(" "))
 
   // Delay scheduling variables: we keep track of our current locality level and the time we
   // last launched a task at that level, and move up a level when localityWaits[curLevel] expires.
@@ -160,6 +162,7 @@ private[spark] class ClusterTaskSetManager(
     }
 
     var hadAliveLocations = false
+    logDebug("partition: " + index + " preferredLocations: " + tasks(index).preferredLocations)
     for (loc <- tasks(index).preferredLocations) {
       for (execId <- loc.executorId) {
         if (sched.isExecutorAlive(execId)) {
@@ -346,10 +349,12 @@ private[spark] class ClusterTaskSetManager(
       val curTime = clock.getTime()
 
       var allowedLocality = getAllowedLocalityLevel(curTime)
+      //logDebug("maxLocality: " + maxLocality)
+      //logDebug("allowedLocality: " + allowedLocality)
       if (allowedLocality > maxLocality) {
         allowedLocality = maxLocality   // We're not allowed to search for farther-away tasks
       }
-
+      //logDebug("findTask: " + findTask(execId, host, allowedLocality))
       findTask(execId, host, allowedLocality) match {
         case Some((index, taskLocality)) => {
           // Found a task; do some bookkeeping and return a task description
@@ -391,11 +396,16 @@ private[spark] class ClusterTaskSetManager(
    * Get the level we can launch tasks according to delay scheduling, based on current wait time.
    */
   private def getAllowedLocalityLevel(curTime: Long): TaskLocality.TaskLocality = {
+    //logDebug("In getAllowedLocalityLevel")
+    //logDebug("currentLocalityIndex: " + currentLocalityIndex)
+    //logDebug("curTime: " + curTime)
+    //logDebug("lastLaunchTime: " + lastLaunchTime)
     while (curTime - lastLaunchTime >= localityWaits(currentLocalityIndex) &&
         currentLocalityIndex < myLocalityLevels.length - 1)
     {
       // Jump to the next locality level, and remove our waiting time for the current one since
       // we don't want to count it again on the next one
+      //logDebug("jumping to the next locality level")
       lastLaunchTime += localityWaits(currentLocalityIndex)
       currentLocalityIndex += 1
     }
@@ -696,6 +706,11 @@ private[spark] class ClusterTaskSetManager(
   private def computeValidLocalityLevels(): Array[TaskLocality.TaskLocality] = {
     import TaskLocality.{PROCESS_LOCAL, NODE_LOCAL, RACK_LOCAL, ANY}
     val levels = new ArrayBuffer[TaskLocality.TaskLocality]
+    /*
+    logDebug("process loc: " + getLocalityWait(PROCESS_LOCAL))
+    logDebug("node loc: " + getLocalityWait(NODE_LOCAL))
+    logDebug("rack loc: " + getLocalityWait(RACK_LOCAL))
+    */
     if (!pendingTasksForExecutor.isEmpty && getLocalityWait(PROCESS_LOCAL) != 0) {
       levels += PROCESS_LOCAL
     }

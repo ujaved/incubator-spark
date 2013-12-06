@@ -380,6 +380,12 @@ class SparkContext(
       .map(pair => pair._2.toString)
   }
 
+  def textFileWithLocations(path: String, locations: List[String], minSplits: Int = defaultMinSplits ): RDD[String] = {
+    val hrdd = hadoopFile(path, classOf[TextInputFormat], classOf[LongWritable], classOf[Text], minSplits)
+    hrdd.setOverlayPreferredLocations(locations)
+    hrdd.map(pair => pair._2.toString)
+  }
+
   /**
    * Get an RDD for a Hadoop-readable dataset from a Hadoop JobConf given its InputFormat and any
    * other necessary info (e.g. file name for a filesystem-based dataset, table name for HyperTable,
