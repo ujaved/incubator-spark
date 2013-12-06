@@ -29,7 +29,7 @@ import java.io.{InputStream, OutputStream, DataInputStream, DataOutputStream}
 import com.esotericsoftware.kryo._
 
 class PageRankUtils extends Serializable {
-  def computeWithCombiner(numVertices: Long, epsilon: Double)(
+  def computeWithCombiner(numVertices: Long, epsilon: Double, iter: Int)(
     self: PRVertex, messageSum: Option[Double], superstep: Int
   ): (PRVertex, Array[PRMessage]) = {
     val newValue = messageSum match {
@@ -38,7 +38,7 @@ class PageRankUtils extends Serializable {
       case _ => self.value
     }
 
-    val terminate = superstep >= 10
+    val terminate = superstep >= iter
 
     val outbox: Array[PRMessage] =
       if (!terminate)
@@ -50,8 +50,8 @@ class PageRankUtils extends Serializable {
     (new PRVertex(newValue, self.outEdges, !terminate), outbox)
   }
 
-  def computeNoCombiner(numVertices: Long, epsilon: Double)(self: PRVertex, messages: Option[Array[PRMessage]], superstep: Int): (PRVertex, Array[PRMessage]) =
-    computeWithCombiner(numVertices, epsilon)(self, messages match {
+  def computeNoCombiner(numVertices: Long, epsilon: Double, iter: Int)(self: PRVertex, messages: Option[Array[PRMessage]], superstep: Int): (PRVertex, Array[PRMessage]) =
+    computeWithCombiner(numVertices, epsilon, iter)(self, messages match {
       case Some(msgs) => Some(msgs.map(_.value).sum)
       case None => None
     }, superstep)
