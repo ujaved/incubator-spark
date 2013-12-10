@@ -20,6 +20,9 @@ import org.apache.spark.bagel.Bagel._
 import org.apache.spark._
 import org.apache.spark.rdd._
 import org.apache.spark.SparkContext._
+
+import scala.math._
+
 import java.io._
 
 /**
@@ -33,87 +36,102 @@ import java.io._
  */
 object PageRank {
   def main(args: Array[String]) {
-    if (args.length < 7) {
-      System.err.println("Usage: PageRank <master> <ifile1> <ifile2> <ofile> <number_of_iterations> <numPartitions> <usePartitioner>")
-      System.err.println("example: ../sbt/sbt 'run local input/tiny_1.txt input/tiny_2.txt output/tiny 10 1 false'")
+    if (args.length < 8) {
+      System.err.println("Usage: PageRank <master> <ifile> <ofile> <number_of_splits> <iterations> <updates> <topk> <numPartitions> <usePartitioner>")
       System.exit(1)
     }
 
     // Input arguments
     val ctx = new SparkContext(args(0), "PageRank",
       System.getenv("SPARK_HOME"), Seq(System.getenv("SPARK_EXAMPLES_JAR")))
-    val lines1 = ctx.textFile(args(1), 1)
-    val lines2 = ctx.textFile(args(2), 1)
-    val lines = lines1 ++ lines2
-    val ofile = args(3)
-    var iter = args(4).toInt
-    val numPartitions = args(5).toInt
-    val usePartitioner = args(6).toBoolean
+    val lines = ctx.textFile(args(1), 1)
+    val ofile = args(2)
+    val splits = args(3).toInt
+    val iters = args(4).toInt
+    val updates = args(5).toInt
+    val update_rate = (iters/updates).toInt
+    val topk = args(6).toInt
+    val numPartitions = args(7).toInt
+    val usePartitioner = args(8).toBoolean
 
-    // Compute the results
-    var result1 = parseFile(ctx, lines1, usePartitioner, numPartitions, iter)
-    val result2 = parseFile(ctx, lines2, usePartitioner, numPartitions, iter)
-    val result  = parseFile(ctx, lines, usePartitioner, numPartitions, iter+1).sortByKey(true)
-    val merged_result = reduceResults(ctx, result1, result2, usePartitioner, numPartitions).sortByKey(true)
+    // Read in files the results
+    var merged_results = parseFile(ctx, lines, usePartitioner)
+
+    // Precise execution
+    val precise = computePR(ctx, merged_results, numPartitions, iters)
+
+    // Approximate execution
+    for (i <- 1 to updates) {
+      val total_size = merged_results.count()
+      val (s1, s2) = merged_results.collect().splitAt((total_size/2).toInt)
+      val results1 = computePR(ctx, ctx.parallelize(s1), numPartitions, update_rate-1)
+      val results2 = computePR(ctx, ctx.parallelize(s2), numPartitions, update_rate-1)
+      merged_results = computePR(ctx, results1++results2, numPartitions, 1)
+    }
+    
+    val approx = merged_results
+
+    // Compute the RMSE
+    val errors = (approx++precise).map{
+      case (id,v) => (id, v.value)
+    }.reduceByKey(
+        (v1,v2) => (v1-v2)*(v1-v2)
+    ).map{
+      case (id,v) => v
+    }.sum
+
+    val RMSE = pow(errors/(approx.count()), 0.5)
 
     // Print the results
-    printToFile((ofile+"_1.txt"), result1)
-    printToFile((ofile+"_2.txt"), result2)
-    printToFile((ofile+".txt"), result)
-    printToFile((ofile+"_merged.txt"), merged_result)
+    printToFile((ofile+"_"+topk+"_precise.txt"), precise, topk)
+    printToFile((ofile+"_"+topk+"_"+updates+".txt"), approx, topk)
+    println("RMSE = " + RMSE)
 
     System.exit(0)
   }
 
-  def parseFile(ctx: SparkContext, lines: RDD[String], usePartitioner: Boolean, numPartitions: Int, iter: Int): RDD[(String, PRVertex)] = {
+  def parseFile(ctx: SparkContext, lines: RDD[String], usePartitioner: Boolean): RDD[(String, PRVertex)] = {
     println("Parsing input file...")
-    val numVertices = lines.count()
     var v = lines.map{ s =>
-      val parts = s.split(":")
-      val id = parts(0)
-      val outEdges = parts(1).split("\\s+")
-
+      val parts = s.split("\\s+")
+      val id = parts(0)//
+      var outEdges = parts.drop(1)//parts(1).split("\\s+")
       (id, new PRVertex(1.0E-4, outEdges))
     }
     println("Done parsing input file.")
-    
+
     if (usePartitioner)
       v = v.partitionBy(new HashPartitioner(ctx.defaultParallelism)).cache
     else
       v = v.cache
 
+    v
+  }
+  
+  def computePR(ctx: SparkContext, inputs: RDD[(String, PRVertex)], numPartitions: Int, iter: Int): RDD[(String, PRVertex)] = {
+    val numVertices = inputs.count()
     val epsilon = 0.01 / numVertices
     val messages = ctx.parallelize(Array[(String, PRMessage)]())
     val utils = new PageRankUtils
     val result =
         Bagel.run(
-          ctx, v, messages, combiner = new PRCombiner(),
+          ctx, inputs, messages, combiner = new PRCombiner(),
           numPartitions = numPartitions)(
           utils.computeWithCombiner(numVertices, epsilon, iter))
 
     result
   }
 
-  def reduceResults(ctx: SparkContext, v1: RDD[(String, PRVertex)], v2: RDD[(String, PRVertex)], usePartitioner: Boolean, numPartitions: Int): RDD[(String, PRVertex)] = {
-        val v = v1++v2
-        val vCount = v.count()
-        val epsilon = 0.01 / vCount
-        val messages = ctx.parallelize(Array[(String, PRMessage)]())
-        val utils = new PageRankUtils
-        Bagel.run(
-          ctx, v, messages, combiner = new PRCombiner(),
-          numPartitions = numPartitions)(
-          utils.computeWithCombiner(vCount, epsilon, 1))
-  }
-
-  def printToFile(file: String, results: RDD[(String, PRVertex)]) {
+  def printToFile(file: String, results: RDD[(String, PRVertex)], topk: Integer) {
     val p = new PrintWriter(new File(file))
     val top =
       (results
-       .map { case (id, vertex) => "%s\t%s".format(id, vertex.value) }
-       .collect)
+       .map { case (id, vertex) => (id, vertex.value) }
+       .collect
+       .sortBy(- _._2)
+       .take(topk))
 
-    try { top.foreach(tup => p.println(tup)) } finally { p.close() }
+    try { top.foreach(tup => p.println(tup._1 + " " + tup._2)) } finally { p.close() }
   }
 
 }
